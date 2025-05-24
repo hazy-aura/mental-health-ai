@@ -1,7 +1,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
+load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 app = FastAPI()
+
+
+
+
 
 class MoodInput(BaseModel):
     mood: str
