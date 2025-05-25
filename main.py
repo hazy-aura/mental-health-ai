@@ -4,6 +4,8 @@ from openai import OpenAI
 import chromadb
 from dotenv import load_dotenv
 import os
+import json
+import re
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +27,20 @@ class MoodInput(BaseModel):
     mood: str
     journal_text: str = ""
 
+def sanitize_json(raw: str) -> str:
+    import re
+
+    raw = raw.strip()
+    raw = re.sub(r"^```json|```$", "", raw)  # Remove markdown code fences
+    raw = re.sub(r",\s*([\]}])", r"\1", raw)  # Remove trailing commas
+    raw = re.sub(r'\n', '', raw)  # Remove newlines
+
+    # Fix unclosed string issue at the end
+    if raw.count('{') > raw.count('}'):
+        raw += '}'
+
+    return raw
+
 @app.post("/generate-advice")
 async def generate_advice(data: MoodInput):
     # Query ChromaDB
@@ -37,7 +53,21 @@ async def generate_advice(data: MoodInput):
         messages=[
             {
                 "role": "system",
-                "content": "You are a supportive and concise mental health coach. Based on the user's mood and journal input, your job is to provide exactly two coping tips, one helpful activity, and one relaxing song. Do not include any additional advice, explanations, or commentary."
+                "content": (
+                    "You are a supportive and concise mental health coach. Based on the user's mood and journal input, "
+                    "return your response strictly in the following JSON format:\n\n"
+                    "{\n"
+                    '  "coping_tips": ["tip 1", "tip 2"],\n'
+                    '  "activity": "a helpful activity",\n'
+                    '  "song": "a relaxing song"\n'
+                    "}\n\n"
+                    "Rules:\n"
+                    "- Only provide JSON.\n"
+                    "- Use correct JSON syntax with double quotes for all strings.\n"
+                    "- Do NOT include explanations or comments.\n"
+                    "- `coping_tips` must be a list of exactly TWO short, separate string tips.\n"
+                    "- `song` must be a plain string: no parentheses, no extra notes.\n"
+                )
             },
             {
                 "role": "user",
@@ -46,15 +76,22 @@ async def generate_advice(data: MoodInput):
                 Their journal entry says: "{data.journal_text}".
                 Relevant context: {context}.
 
-                Based strictly on this information, suggest:
-                1. Two specific coping tips (personalized to the mood and journal).
-                2. One helpful activity (appropriate to their current emotional state).
-                3. One relaxing song (that could help them unwind).
-
-                Return only these four things—no extra text.
+                Provide your advice using the exact format shared above.
                 """
             }
         ]
     )
 
-    return {"advice": response.choices[0].message.content}
+    raw_response = response.choices[0].message.content
+    cleaned_response = sanitize_json(raw_response)
+
+    try:
+        parsed_advice = json.loads(cleaned_response)
+        return {"advice": parsed_advice}
+    except json.JSONDecodeError as e:
+        return {
+            "error": "Failed to parse model response",
+            "raw": raw_response,
+            "cleaned": cleaned_response,
+            "details": str(e)
+        }
