@@ -25,6 +25,7 @@ collection = chroma_client.get_or_create_collection(name="coping_tips")
 
 class MoodInput(BaseModel):
     mood: str
+    moodScale: int
     journal_text: str = ""
 
 def sanitize_json(raw: str) -> str:
@@ -41,6 +42,10 @@ def sanitize_json(raw: str) -> str:
 
     return raw
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Mental Health Coping Tips API!"}
+
 @app.post("/generate-advice")
 async def generate_advice(data: MoodInput):
     # Query ChromaDB
@@ -54,7 +59,7 @@ async def generate_advice(data: MoodInput):
             {
                 "role": "system",
                 "content": (
-                    "You are a supportive and concise mental health coach. Based on the user's mood and journal input, "
+                    "You are a supportive and concise mental health coach. Based on the user's mood, moodscale and journal input, "
                     "return your response strictly in the following JSON format:\n\n"
                     "{\n"
                     '  "coping_tips": ["tip 1", "tip 2"],\n'
